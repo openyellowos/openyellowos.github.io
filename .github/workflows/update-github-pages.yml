@@ -1,0 +1,65 @@
+name: Deploy Jekyll with GitHub Pages dependencies preinstalled
+
+on:
+  # メイン or プレビューブランチにpushした時に起動
+  push:
+    branches: ["main", "preview"]
+
+  workflow_dispatch:
+
+# GitHubPages用権限設定
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 非同期の設定
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # jekyllでのビルド ジョブ
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Rubyのインストール
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@55283cc23133118229fd3f97f9336ee23a179fcf # v1.146.0
+        with:
+          ruby-version: '3.2.2'
+          bundler-cache: true
+          cache-version: 0
+
+      # GitHubPagesのセットアップ
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
+
+      - name: Build with Jekyll
+        # Outputs to the './_site' directory by default
+        run: bundle exec jekyll build --baseurl "${{ steps.pages.outputs.base_path }}"
+        env:
+          JEKYLL_ENV: production
+
+      # 検索用データファイル生成 theme側のrakeで生成
+      - name: Build search json asset
+        run: bundle exec just-the-docs rake search:init
+        
+      # ビルド結果をアップロード './_site' directory by default
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v2
+
+  # デプロイ ジョブ
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{github.ref_name == 'main' && steps.deployment.outputs.page_url || format('{0}{1}', steps.deployment.outputs.page_url, github.ref_name) }}
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
